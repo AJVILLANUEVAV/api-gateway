@@ -1,0 +1,96 @@
+_format_version: "3.0"
+services:
+  # API de Clientes (del laboratorio, sin cambios)
+  - name: clientes-service
+    url: http://clientes-api:8080
+    routes:
+      - name: clientes-route
+        paths:
+          - /api/v1
+        strip_path: true
+    plugins:
+      - name: key-auth
+        config:
+          key_names:
+            - Ocp-Apim-Subscription-Key
+          hide_credentials: true
+      - name: rate-limiting
+        config:
+          minute: 5
+          policy: local
+      - name: correlation-id
+        config:
+          header_name: X-Correlation-ID
+          generator: uuid
+          echo_downstream: true
+      - name: response-transformer
+        config:
+          add:
+            headers:
+              - "X-Gateway:kong-lab"
+  # Contrato público (del laboratorio, sin cambios)
+  - name: contrato-service
+    url: http://clientes-api:8080/q/openapi
+    routes:
+      - name: contrato-route
+        paths:
+          - /contrato
+        strip_path: true
+  # NUEVO: API de Cuentas, solo para el producto Premium
+  - name: cuentas-service
+    url: http://cuentas-api:8080/cuentas
+    routes:
+      - name: cuentas-route
+        paths:
+          - /api/v1/cuentas
+        strip_path: true
+    plugins:
+      - name: key-auth
+        config:
+          key_names:
+            - Ocp-Apim-Subscription-Key
+          hide_credentials: true
+      - name: acl
+        config:
+          allow:
+            - premium
+          hide_groups_header: true
+      - name: proxy-cache
+        config:
+          strategy: memory
+          cache_ttl: 30
+          request_method:
+            - GET
+          response_code:
+            - 200
+          content_type:
+            - application/json
+            - application/json;charset=UTF-8
+      - name: correlation-id
+        config:
+          header_name: X-Correlation-ID
+          generator: uuid
+          echo_downstream: true
+      - name: response-transformer
+        config:
+          add:
+            headers:
+              - "X-Gateway:kong-lab"
+consumers:
+  # Producto Básico: solo Clientes, 5 llamadas/min
+  - username: app-movil
+    keyauth_credentials:
+      - key: movil-key-123
+    acls:
+      - group: basico
+  # Producto Premium: Clientes + Cuentas, 20 llamadas/min
+  - username: app-web
+    keyauth_credentials:
+      - key: web-key-456
+    acls:
+      - group: premium
+    plugins:
+      - name: rate-limiting
+        config:
+          minute: 20
+          policy: local
